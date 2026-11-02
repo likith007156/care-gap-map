@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Care Gap Map: how far is care in Karnataka?</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Ctext y=%2715%27 font-size=%2716%27%3E%F0%9F%8F%A5%3C/text%3E%3C/svg%3E">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{--bg:#fff;--fg:#14213d;--mut:#667085;--line:#e4e7ec;--acc:#e8590c;--g:#2e9e5b;--y:#f1c40f;--o:#e67e22;--r:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#161b26;--fg:#eef1f6;--mut:#9aa4b5;--line:#2a3142}}
+*{box-sizing:border-box}html,body{height:100%;margin:0;font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--fg)}
+#map{position:absolute;inset:0}
+#panel{position:absolute;top:12px;left:12px;bottom:12px;width:340px;background:var(--bg);border-radius:14px;box-shadow:0 6px 28px #0005;display:flex;flex-direction:column;overflow:hidden;z-index:2}
+#panel .in{overflow:auto;padding:16px}
+h1{font-size:19px;margin:0 0 2px;letter-spacing:-.2px}h1 span{color:var(--acc)}
+.sub{color:var(--mut);font-size:12.5px;margin-bottom:12px}
+.big{display:flex;gap:10px;margin:12px 0}.card{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px}
+.card b{display:block;font-size:24px;line-height:1.1;color:var(--acc)}.card small{color:var(--mut)}
+.search{display:flex;gap:6px}.search input{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}
+button{cursor:pointer;border:0;border-radius:8px;padding:9px 12px;background:var(--acc);color:#fff;font-weight:600}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);padding:5px 9px;font-weight:500;font-size:12px}
+h3{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--mut);margin:16px 0 6px}
+.bar{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px}.bar i{height:10px;border-radius:5px;display:block}.bar span{width:58px;color:var(--mut)}
+label{display:flex;align-items:center;gap:8px;margin:5px 0;cursor:pointer}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.rank{display:flex;justify-content:space-between;padding:6px 8px;border-radius:8px;cursor:pointer}.rank:hover{background:var(--line)}
+#out{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;font-size:13px}#out:empty{display:none}
+#out .hl{font-size:17px;font-weight:700;color:var(--acc)}
+#veil{position:absolute;inset:0;background:var(--bg);z-index:5;display:flex;align-items:center;justify-content:center;color:var(--fg);font-size:15px;transition:opacity .4s}
+#warn{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#fff3cd;color:#664d03;padding:8px 14px;border-radius:8px;z-index:3;font-size:12.5px;max-width:90%;display:none;box-shadow:0 2px 10px #0004}
+@media(max-width:700px){#panel{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:46vh}}
+.grade{display:inline-block;min-width:26px;text-align:center;border-radius:6px;padding:1px 7px;color:#fff;font-weight:700;margin-right:6px}
+.row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.maplibregl-popup-content{color:#14213d;font:13px system-ui}
+</style></head><body>
+<div id="map"></div><div id="veil">Loading healthcare data…</div><div id="warn"></div>
+<div id="panel"><div class="in">
+ <h1>Care <span>Gap</span> Map</h1>
+ <div class="sub">How far is the nearest hospital or clinic from every village in Karnataka? Built on Amazon Location Service. Click anywhere for an access grade, a real driving route and a 30/60 minute service area.</div>
+ <div class="search"><input id="q" placeholder="Search a town, e.g. Arsikere" aria-label="Search place"><button id="go">Go</button></div>
+ <div id="out"></div>
+ <div class="row"><button id="tour" class="ghost">▶ Play guided tour</button><button id="copy" class="ghost">Copy link</button></div>
+ <div class="big"><div class="card"><b id="s1">–</b><small>villages &gt; 10 km from care</small></div><div class="card"><b id="s2">–</b><small>farthest village (km)</small></div></div>
+ <h3>Distance to nearest hospital or clinic</h3><div id="hist"></div>
+ <label><input type="checkbox" id="vil" checked> Show villages</label>
+ <div class="sub" style="margin:2px 0 0">Small plain dots = villages (pink = 20+ km). Dots with a white ring = facilities.</div>
+ <h3>Facilities</h3>
+ <label><input type="checkbox" class="f" value="hospital" checked><span class="dot" style="background:#c0392b"></span>Hospitals</label>
+ <label><input type="checkbox" class="f" value="clinic" checked><span class="dot" style="background:#2980b9"></span>Clinics</label>
+ <label><input type="checkbox" class="f" value="doctors"><span class="dot" style="background:#8e44ad"></span>Doctors</label>
+ <label><input type="checkbox" class="f" value="pharmacy"><span class="dot" style="background:#16a085"></span>Pharmacies</label>
+ <h3>Most remote villages <button class="ghost" id="shuf" style="float:right;margin-top:-4px">Shuffle</button></h3><div id="rank"></div>
+ <h3>About</h3><div class="sub">Data: OpenStreetMap contributors (facilities, villages), processed with Python, hosted on Amazon S3. Map, geocoding and routing: Amazon Location Service. Straight-line distance for coverage; road routes on click. OSM coverage varies, so figures describe mapped villages only.</div>
+</div></div>
+<script src="config.js"></script>
+<script>
+// ====== CONFIG (edit config.js, not this file) ======
+const API_KEY=(window.CFG&&window.CFG.key)||"PASTE_", REGION=(window.CFG&&window.CFG.region)||"ap-south-1";
+const FAC_URL="data/facilities.geojson", VIL_URL="data/villages.geojson";
+// =====================
+const $=id=>document.getElementById(id);
+const COL={hospital:"#c0392b",clinic:"#2980b9",doctors:"#8e44ad",pharmacy:"#16a085"};
+const HAS_KEY=API_KEY&&!API_KEY.startsWith("PASTE_");
+const warn=m=>{const w=$("warn");w.textContent=m;w.style.display="block";setTimeout(()=>w.style.display="none",9000)};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dark=matchMedia("(prefers-color-scheme: dark)").matches;
+const style=HAS_KEY?`https://maps.geo.${REGION}.amazonaws.com/v2/styles/Standard/descriptor?key=${API_KEY}&color-scheme=${dark?"Dark":"Light"}`
+ :{version:8,sources:{o:{type:"raster",tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],tileSize:256,attribution:"© OpenStreetMap"}},layers:[{id:"o",type:"raster",source:"o"}]};
+const map=new maplibregl.Map({container:"map",style,center:[76.4,14.7],zoom:6.3,hash:true,attributionControl:{compact:true}});
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
+map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true}}),"top-right");
+if(!HAS_KEY)warn("Demo mode: add your Amazon Location API key in index.html to enable Amazon maps, search and routing.");
+let fac=[],vil=[],marker=null,touring=false,skipClick=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const GR=[[5,"A","#2e9e5b"],[10,"B","#8bc34a"],[20,"C","#e67e22"],[40,"D","#d35400"],[1e9,"F","#c0392b"]];
+const grade=d=>GR.find(g=>d<g[0]);
+const hav=(a,b)=>{const r=Math.PI/180,dl=(b[1]-a[1])*r,dn=(b[0]-a[0])*r,x=Math.sin(dl/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dn/2)**2;return 12742*Math.asin(Math.sqrt(x))};
+const types=()=>[...document.querySelectorAll(".f:checked")].map(e=>e.value);
+function applyFilter(){const t=types();map.getSource("fac").setData({type:"FeatureCollection",features:fac.filter(f=>t.includes(f.properties.type))})}
+function renderRank(){const top=[...vil].sort((a,b)=>b.properties.km-a.properties.km).slice(0,60);
+ const pick=[...top].sort(()=>Math.random()-.5).slice(0,6);
+ $("rank").innerHTML=pick.map((v,i)=>`<div class="rank" data-i="${i}"><span>${esc(v.properties.name||"Unnamed village")}</span><b>${v.properties.km} km</b></div>`).join("");
+ $("rank").querySelectorAll(".rank").forEach((el,i)=>el.onclick=()=>{const c=pick[i].geometry.coordinates;map.flyTo({center:c,zoom:11});explore(c)})}
+function stats(){const n=vil.length,far=vil.filter(f=>f.properties.km>=10).length,mx=Math.max(...vil.map(f=>f.properties.km));
+ $("s1").textContent=(100*far/n).toFixed(1)+"%";$("s2").textContent=mx.toFixed(0);
+ const bk=[["< 5 km",0,5,"#2e9e5b"],["5–10",5,10,"#f1c40f"],["10–20",10,20,"#e67e22"],["20+ km",20,1e9,"#d6006f"]];
+ $("hist").innerHTML=bk.map(([l,a,b,c])=>{const k=vil.filter(f=>f.properties.km>=a&&f.properties.km<b).length;return `<div class="bar"><span>${l}</span><i style="width:${Math.max(2,170*k/n)}px;background:${c}"></i>${k.toLocaleString()}</div>`}).join("")}
+async function load(u){const r=await fetch(u);if(!r.ok)throw new Error(u+" "+r.status);return r.json()}
+map.on("load",async()=>{
+ try{
+  const [F,V]=await Promise.all([load(FAC_URL),load(VIL_URL)]);fac=F.features;vil=V.features;
+  map.addSource("vil",{type:"geojson",data:V});
+  map.addLayer({id:"vil",type:"circle",source:"vil",paint:{"circle-radius":["interpolate",["linear"],["zoom"],5,1.6,10,5.5],"circle-opacity":.8,
+   "circle-color":["step",["get","km"],"#2e9e5b",5,"#f1c40f",10,"#e67e22",20,"#d6006f"]}});
+  map.addSource("fac",{type:"geojson",data:F,cluster:true,clusterRadius:45,clusterMaxZoom:10});
+  map.addLayer({id:"cl",type:"circle",source:"fac",filter:["has","point_count"],paint:{"circle-color":"#1d3557","circle-stroke-width":2,"circle-stroke-color":"#fff","circle-radius":["step",["get","point_count"],13,50,18,200,24]}});
+  const font=(map.getStyle().layers.find(l=>l.layout&&l.layout["text-font"])||{layout:{}}).layout["text-font"];
+  if(font)map.addLayer({id:"cln",type:"symbol",source:"fac",filter:["has","point_count"],layout:{"text-field":["get","point_count_abbreviated"],"text-size":11,"text-font":font,"text-allow-overlap":true},paint:{"text-color":"#fff"}});
+  map.addLayer({id:"pts",type:"circle",source:"fac",filter:["!",["has","point_count"]],paint:{"circle-radius":6.5,"circle-stroke-width":2,"circle-stroke-color":"#fff",
+   "circle-color":["match",["get","type"],"hospital",COL.hospital,"clinic",COL.clinic,"doctors",COL.doctors,COL.pharmacy]}});
+  stats();renderRank();
+  map.on("click","cl",e=>{skipClick=true;setTimeout(()=>skipClick=false,50);map.easeTo({center:e.lngLat,zoom:map.getZoom()+2})});
+  map.on("click","pts",e=>{const p=e.features[0].properties;skipClick=true;setTimeout(()=>skipClick=false,50);
+   new maplibregl.Popup().setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(p.name||"Unnamed")}</b><br>${esc(p.type)}`).addTo(map)});
+  map.on("click",e=>{if(skipClick)return;explore([e.lngLat.lng,e.lngLat.lat]).catch(err=>warn("Click failed: "+err.message))});
+  ["cl","pts"].forEach(l=>{map.on("mouseenter",l,()=>map.getCanvas().style.cursor="pointer");map.on("mouseleave",l,()=>map.getCanvas().style.cursor="")});
+  document.querySelectorAll(".f").forEach(e=>e.onchange=applyFilter);
+  $("vil").onchange=e=>map.setLayoutProperty("vil","visibility",e.target.checked?"visible":"none");
+  $("shuf").onclick=renderRank;
+ }catch(err){warn("Could not load data files ("+err.message+"). Run build_data.py and host the data/ folder next to this page.")}
+ $("veil").style.opacity=0;setTimeout(()=>$("veil").remove(),450);
+});
+map.on("error",e=>{if(e&&e.error&&/40[13]/.test(e.error.message||""))warn("Amazon Location rejected the API key. Check its allowed referrers and enabled APIs.")});
+async function explore(p){
+ if(marker)marker.remove();marker=new maplibregl.Marker({color:"#e8590c"}).setLngLat(p).addTo(map);
+ const t=types(),o=$("out");o.innerHTML="<i>Finding nearest care…</i>";o.scrollIntoView({block:"nearest"});
+ const near=fac.filter(f=>t.includes(f.properties.type)).map(f=>({f,d:hav(p,f.geometry.coordinates)})).sort((a,b)=>a.d-b.d).slice(0,3);
+ if(!near.length){o.textContent="Select at least one facility type.";return}
+ const list=near.map(n=>`${esc(n.f.properties.name||"Unnamed "+n.f.properties.type)}<span style="color:var(--mut)"> · ${n.d.toFixed(1)} km</span>`).join("<br>");
+ const g=grade(near[0].d);let nv=null,nd=3;
+ for(const v of vil){const d=hav(p,v.geometry.coordinates);if(d<nd){nd=d;nv=v}}
+ o.innerHTML=`<div class="hl"><span class="grade" style="background:${g[2]}">${g[1]}</span>${near[0].d.toFixed(1)} km to nearest care</div>${nv&&nv.properties.name?`<div style="color:var(--mut)">Near ${esc(nv.properties.name)}</div>`:""}<div style="margin-top:4px">${list}</div><div id="rt" style="margin-top:6px;color:var(--mut)">${HAS_KEY?"Calculating driving route…":"Add an API key for driving routes."}</div><div class="row" id="isorow"></div>`;
+ if(!HAS_KEY)return;
+ try{
+  const r=await fetch(`https://routes.geo.${REGION}.amazonaws.com/v2/routes?key=${API_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({Origin:p,Destination:near[0].f.geometry.coordinates,TravelMode:"Car",LegGeometryFormat:"Simple"})});
+  const j=await r.json();if(!r.ok||!j.Routes||!j.Routes.length)throw new Error(j.message||"no route");
+  const R=j.Routes[0],coords=R.Legs.flatMap(l=>l.Geometry.LineString);
+  let km=0;for(let i=1;i<coords.length;i++)km+=hav(coords[i-1],coords[i]);
+  const s=R.Summary||{},sec=s.Duration??(s.Overview&&s.Overview.Duration);
+  const mins=sec!=null?Math.round(sec/60):Math.round(km/40*60);
+  const line={type:"Feature",geometry:{type:"LineString",coordinates:coords}};
+  if(map.getSource("rt"))map.getSource("rt").setData(line);else{map.addSource("rt",{type:"geojson",data:line});
+   map.addLayer({id:"rt-c",type:"line",source:"rt",paint:{"line-color":"#fff","line-width":8}});map.addLayer({id:"rt",type:"line",source:"rt",paint:{"line-color":"#e8590c","line-width":4.5}})}
+  const b=coords.reduce((bb,c)=>bb.extend(c),new maplibregl.LngLatBounds(coords[0],coords[0]));
+  map.fitBounds(b,{padding:{top:60,bottom:60,left:innerWidth>700?400:40,right:60},maxZoom:13});
+  $("rt").innerHTML=`<b style="color:var(--fg)">By road: ${km.toFixed(1)} km, about ${mins>=60?Math.floor(mins/60)+" h ":""}${mins%60} min</b>`;
+  $("isorow").innerHTML='<button class="ghost" id="iso">Show 30 / 60 min drive area of this facility</button>';
+  $("iso").onclick=()=>service(near[0].f.geometry.coordinates,near[0].f.properties.name);
+ }catch(e){const x=$("rt");if(x)x.textContent="No driving route found from this spot (try a point nearer a road)."}
+}
+async function service(c,name){
+ const b=$("iso");b.textContent="Calculating…";
+ try{
+  const r=await fetch(`https://routes.geo.${REGION}.amazonaws.com/v2/isolines?key=${API_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({Origin:c,Thresholds:{Time:[1800,3600]},TravelMode:"Car",IsolineGeometryFormat:"Simple"})});
+  const j=await r.json();if(!r.ok||!j.Isolines)throw new Error(j.message||"no isoline");
+  const feats=[];for(const iso of j.Isolines)for(const g of iso.Geometries||[])if(g.Polygon)feats.push({type:"Feature",properties:{t:iso.TimeThreshold},
+   geometry:{type:"Polygon",coordinates:g.Polygon}});
+  feats.sort((a,b)=>b.properties.t-a.properties.t);
+  const fc={type:"FeatureCollection",features:feats};
+  if(map.getSource("iso"))map.getSource("iso").setData(fc);else{map.addSource("iso",{type:"geojson",data:fc});
+   map.addLayer({id:"iso-f",type:"fill",source:"iso",paint:{"fill-color":["case",["<=",["get","t"],1800],"#2e9e5b","#f1c40f"],"fill-opacity":.28}},"vil");
+   map.addLayer({id:"iso-l",type:"line",source:"iso",paint:{"line-color":"#14213d","line-width":1.2,"line-dasharray":[2,2]}},"vil")}
+  const bb=new maplibregl.LngLatBounds(c,c);feats.forEach(f=>f.geometry.coordinates[0].forEach(x=>bb.extend(x)));
+  map.fitBounds(bb,{padding:{top:50,bottom:50,left:innerWidth>700?400:40,right:50},duration:1200});
+  b.textContent="Green = 30 min, yellow = 60 min by car. Villages outside are care gaps.";b.disabled=true;
+ }catch(e){b.textContent="Drive area unavailable (check Routes permission)"}
+}
+async function tour(){
+ if(touring){touring=false;$("tour").textContent="▶ Play guided tour";return}
+ if(!vil.length)return;touring=true;$("tour").textContent="■ Stop tour";
+ const top=[...vil].filter(v=>v.properties.name).sort((a,b)=>b.properties.km-a.properties.km).slice(0,30).sort(()=>Math.random()-.5).slice(0,4);
+ map.flyTo({center:[76.4,14.7],zoom:6.3,duration:1500});await sleep(2500);
+ for(const v of top){if(!touring)break;const c=v.geometry.coordinates;map.flyTo({center:c,zoom:10,duration:2500});await sleep(3000);
+  if(!touring)break;await explore(c);await sleep(4500)}
+ touring=false;$("tour").textContent="▶ Play guided tour";
+}
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$("copy").textContent="Copied!"}catch(e){$("copy").textContent="Copy failed"}setTimeout(()=>$("copy").textContent="Copy link",1500)};
+async function go(){const q=$("q").value.trim();if(!q)return;
+ if(!HAS_KEY){warn("Search needs the Amazon Location API key.");return}
+ try{const r=await fetch(`https://places.geo.${REGION}.amazonaws.com/v2/geocode?key=${API_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({QueryText:q+", Karnataka, India",MaxResults:1,BiasPosition:[76.4,14.7]})});const j=await r.json();
+  const it=j.ResultItems&&j.ResultItems[0];if(!it){warn("No match for \""+q+"\".");return}
+  map.flyTo({center:it.Position,zoom:11});explore(it.Position)}catch(e){warn("Search failed. Check the API key's Places permission.")}}
+$("go").onclick=go;$("tour").onclick=tour;$("q").onkeydown=e=>{if(e.key==="Enter")go()};
+</script></body></html>
